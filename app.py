@@ -447,6 +447,11 @@ elif st.session_state.pagina == "formulario":
                         resp = respostas[campo]
                         itens_payload.append({
                             "avaliacao_id": avaliacao_id,
+                            "ure": ure,
+                            "perfil_respondente": payload_avaliacao["perfil_respondente"],
+                            "email_respondente": payload_avaliacao["email_respondente"],
+                            "nome_lider": nome_lider.strip(),
+                            "avaliacao_criada_em": momento_envio,
                             "competencia": comp["titulo"],
                             "item_codigo": campo,
                             "comportamento_titulo": subtitulo,
@@ -460,6 +465,11 @@ elif st.session_state.pagina == "formulario":
                 if perfil == "Gestor do Programa":
                     itens_payload.append({
                         "avaliacao_id": avaliacao_id,
+                        "ure": ure,
+                        "perfil_respondente": payload_avaliacao["perfil_respondente"],
+                        "email_respondente": payload_avaliacao["email_respondente"],
+                        "nome_lider": nome_lider.strip(),
+                        "avaliacao_criada_em": momento_envio,
                         "competencia": "Entregas",
                         "item_codigo": "entregas",
                         "comportamento_titulo": "Avaliação de Entregas",
