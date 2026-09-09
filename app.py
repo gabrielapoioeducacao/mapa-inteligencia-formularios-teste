@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import streamlit as st
 from supabase import create_client
 
@@ -340,9 +341,9 @@ elif st.session_state.pagina == "formulario":
             )
 
             if escolha == SEM_INSUMOS_KEY:
-                respostas[campo] = {"nota": None, "sem_insumos": True}
+                respostas[campo] = {"nota": None, "sem_insumos": True, "opcao_texto": escolha}
             else:
-                respostas[campo] = {"nota": ESCALA[escolha], "sem_insumos": False}
+                respostas[campo] = {"nota": ESCALA[escolha], "sem_insumos": False, "opcao_texto": escolha}
 
             st.divider()
 
@@ -393,6 +394,7 @@ elif st.session_state.pagina == "formulario":
 
         entregas_nota = ESCALA_ENTREGAS[escolha_entrega]
         entregas_sem_insumos = (escolha_entrega == "Não Avaliado — Sem insumos suficientes")
+        entregas_opcao_texto = escolha_entrega
 
         st.divider()
 
@@ -421,49 +423,55 @@ elif st.session_state.pagina == "formulario":
             for e in erros:
                 st.error(e)
         else:
-            payload = {
+            momento_envio = datetime.now(timezone.utc).isoformat()
+
+            # ── Linha principal: só identificação + qualitativo ──────────────
+            payload_avaliacao = {
                 "ure": ure,
                 "perfil_respondente": perfil.lower().replace(" do programa", "").replace(" ", "_"),
                 "email_respondente": email.strip().lower(),
                 "nome_lider": nome_lider.strip(),
-                # Escuta
-                "escuta_1_nota": respostas["escuta_1"]["nota"],
-                "escuta_1_sem_insumos": respostas["escuta_1"]["sem_insumos"],
-                "escuta_2_nota": respostas["escuta_2"]["nota"],
-                "escuta_2_sem_insumos": respostas["escuta_2"]["sem_insumos"],
-                "escuta_3_nota": respostas["escuta_3"]["nota"],
-                "escuta_3_sem_insumos": respostas["escuta_3"]["sem_insumos"],
-                # Práxis
-                "praxis_1_nota": respostas["praxis_1"]["nota"],
-                "praxis_1_sem_insumos": respostas["praxis_1"]["sem_insumos"],
-                "praxis_2_nota": respostas["praxis_2"]["nota"],
-                "praxis_2_sem_insumos": respostas["praxis_2"]["sem_insumos"],
-                "praxis_3_nota": respostas["praxis_3"]["nota"],
-                "praxis_3_sem_insumos": respostas["praxis_3"]["sem_insumos"],
-                # Multiplicação
-                "multiplicacao_1_nota": respostas["multiplicacao_1"]["nota"],
-                "multiplicacao_1_sem_insumos": respostas["multiplicacao_1"]["sem_insumos"],
-                "multiplicacao_2_nota": respostas["multiplicacao_2"]["nota"],
-                "multiplicacao_2_sem_insumos": respostas["multiplicacao_2"]["sem_insumos"],
-                "multiplicacao_3_nota": respostas["multiplicacao_3"]["nota"],
-                "multiplicacao_3_sem_insumos": respostas["multiplicacao_3"]["sem_insumos"],
-                # Ética
-                "etica_1_nota": respostas["etica_1"]["nota"],
-                "etica_1_sem_insumos": respostas["etica_1"]["sem_insumos"],
-                "etica_2_nota": respostas["etica_2"]["nota"],
-                "etica_2_sem_insumos": respostas["etica_2"]["sem_insumos"],
-                "etica_3_nota": respostas["etica_3"]["nota"],
-                "etica_3_sem_insumos": respostas["etica_3"]["sem_insumos"],
-                # Qualitativo
                 "qualitativo_destaques": destaques.strip() or None,
                 "qualitativo_desenvolvimento": desenvolvimento.strip() or None,
-                "entregas_nota": entregas_nota,
-                "entregas_sem_insumos": entregas_sem_insumos,
                 "qualitativo_entregas_gestor": entregas_gestor.strip() if entregas_gestor else None,
             }
 
             try:
-                supabase.table("avaliacoes_lider").insert(payload).execute()
+                resultado = supabase.table("avaliacoes_lider").insert(payload_avaliacao).execute()
+                avaliacao_id = resultado.data[0]["id"]
+
+                # ── Uma linha por item avaliado, com texto completo e nota ────
+                itens_payload = []
+                for comp_key, comp in COMPETENCIAS.items():
+                    for campo, subtitulo, comportamento in comp["itens"]:
+                        resp = respostas[campo]
+                        itens_payload.append({
+                            "avaliacao_id": avaliacao_id,
+                            "competencia": comp["titulo"],
+                            "item_codigo": campo,
+                            "comportamento_titulo": subtitulo,
+                            "comportamento_descricao": comportamento,
+                            "nota": resp["nota"],
+                            "opcao_texto": resp["opcao_texto"],
+                            "sem_insumos": resp["sem_insumos"],
+                            "respondido_em": momento_envio,
+                        })
+
+                if perfil == "Gestor do Programa":
+                    itens_payload.append({
+                        "avaliacao_id": avaliacao_id,
+                        "competencia": "Entregas",
+                        "item_codigo": "entregas",
+                        "comportamento_titulo": "Avaliação de Entregas",
+                        "comportamento_descricao": "Avalie o desempenho do líder em relação às entregas pactuadas sob sua responsabilidade no período.",
+                        "nota": entregas_nota,
+                        "opcao_texto": entregas_opcao_texto,
+                        "sem_insumos": entregas_sem_insumos,
+                        "respondido_em": momento_envio,
+                    })
+
+                supabase.table("avaliacoes_itens").insert(itens_payload).execute()
+
                 st.session_state.pagina = "sucesso"
                 st.rerun()
             except Exception as e:
