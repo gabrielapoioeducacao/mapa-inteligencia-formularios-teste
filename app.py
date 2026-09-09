@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import streamlit as st
 from supabase import create_client
 
@@ -179,6 +178,14 @@ ESCALA = {
     "3 — Observado adequadamente na maioria das situações": 3,
     "4 — Observado de forma consistente e contribui positivamente": 4,
     "5 — Observado como referência, fortalece continuamente a equipe": 5,
+}
+
+# Mapeia o código interno de cada item pro número da coluna no banco (1.1, 1.2, 2.1...)
+ITEM_NUMERO = {
+    "escuta_1": "1.1", "escuta_2": "1.2", "escuta_3": "1.3",
+    "praxis_1": "2.1", "praxis_2": "2.2", "praxis_3": "2.3",
+    "multiplicacao_1": "3.1", "multiplicacao_2": "3.2", "multiplicacao_3": "3.3",
+    "etica_1": "4.1", "etica_2": "4.2", "etica_3": "4.3",
 }
 
 COMPETENCIAS = {
@@ -423,65 +430,23 @@ elif st.session_state.pagina == "formulario":
             for e in erros:
                 st.error(e)
         else:
-            momento_envio = datetime.now(timezone.utc).isoformat()
-
-            # ── Linha principal: só identificação + qualitativo ──────────────
+            # ── Tudo em uma única linha: identificação + notas + qualitativo ──
             payload_avaliacao = {
                 "ure": ure,
-                "perfil_respondente": perfil.lower().replace(" do programa", "").replace(" ", "_"),
+                "perfil_respondente": perfil,
                 "email_respondente": email.strip().lower(),
                 "nome_lider": nome_lider.strip(),
                 "qualitativo_destaques": destaques.strip() or None,
                 "qualitativo_desenvolvimento": desenvolvimento.strip() or None,
                 "qualitativo_entregas_gestor": entregas_gestor.strip() if entregas_gestor else None,
+                "5.1": entregas_nota,
             }
 
+            for campo, numero in ITEM_NUMERO.items():
+                payload_avaliacao[numero] = respostas[campo]["nota"]
+
             try:
-                resultado = supabase.table("avaliacoes_lider").insert(payload_avaliacao).execute()
-                avaliacao_id = resultado.data[0]["id"]
-
-                # ── Uma linha por item avaliado, com texto completo e nota ────
-                itens_payload = []
-                for comp_key, comp in COMPETENCIAS.items():
-                    for campo, subtitulo, comportamento in comp["itens"]:
-                        resp = respostas[campo]
-                        itens_payload.append({
-                            "avaliacao_id": avaliacao_id,
-                            "ure": ure,
-                            "perfil_respondente": payload_avaliacao["perfil_respondente"],
-                            "email_respondente": payload_avaliacao["email_respondente"],
-                            "nome_lider": nome_lider.strip(),
-                            "avaliacao_criada_em": momento_envio,
-                            "competencia": comp["titulo"],
-                            "item_codigo": campo,
-                            "comportamento_titulo": subtitulo,
-                            "comportamento_descricao": comportamento,
-                            "nota": resp["nota"],
-                            "opcao_texto": resp["opcao_texto"],
-                            "sem_insumos": resp["sem_insumos"],
-                            "respondido_em": momento_envio,
-                        })
-
-                if perfil == "Gestor do Programa":
-                    itens_payload.append({
-                        "avaliacao_id": avaliacao_id,
-                        "ure": ure,
-                        "perfil_respondente": payload_avaliacao["perfil_respondente"],
-                        "email_respondente": payload_avaliacao["email_respondente"],
-                        "nome_lider": nome_lider.strip(),
-                        "avaliacao_criada_em": momento_envio,
-                        "competencia": "Entregas",
-                        "item_codigo": "entregas",
-                        "comportamento_titulo": "Avaliação de Entregas",
-                        "comportamento_descricao": "Avalie o desempenho do líder em relação às entregas pactuadas sob sua responsabilidade no período.",
-                        "nota": entregas_nota,
-                        "opcao_texto": entregas_opcao_texto,
-                        "sem_insumos": entregas_sem_insumos,
-                        "respondido_em": momento_envio,
-                    })
-
-                supabase.table("avaliacoes_itens").insert(itens_payload).execute()
-
+                supabase.table("avaliacoes_lider").insert(payload_avaliacao).execute()
                 st.session_state.pagina = "sucesso"
                 st.rerun()
             except Exception as e:
